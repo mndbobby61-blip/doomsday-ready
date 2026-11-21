@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, describeError, formatDuration } from '../api.js';
-import PrerequisitePicker from '../components/PrerequisitePicker.jsx';
+import PrerequisitePicker from '../components/prerequisitePicker.jsx';
 
 const EMPTY_FORM = { title: '', releaseYear: new Date().getFullYear(), runtime: 120, prerequisites: [] };
 
