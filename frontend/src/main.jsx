@@ -3,6 +3,13 @@ import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
 import './styles.css';
 
+// Apply the saved theme before the first paint (dark is the default).
+try {
+  document.documentElement.dataset.theme = localStorage.getItem('dr_theme') || 'dark';
+} catch {
+  document.documentElement.dataset.theme = 'dark';
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />

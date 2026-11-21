@@ -1,36 +1,48 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { api, describeError, formatDuration } from '../api.js';
-import PrerequisitePicker from '../components/prerequisitePicker.jsx';
+import MovieDialog from '../components/MovieDialog.jsx';
+import Poster from '../components/Poster.jsx';
 
-const EMPTY_FORM = { title: '', releaseYear: new Date().getFullYear(), runtime: 120, prerequisites: [] };
+const FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'unwatched', label: 'To watch' },
+  { id: 'watched', label: 'Watched' },
+];
+
+const SORTS = {
+  year: (a, b) => a.releaseYear - b.releaseYear || a.id - b.id,
+  title: (a, b) => a.title.localeCompare(b.title),
+  runtime: (a, b) => b.runtime - a.runtime,
+};
 
 export default function Movies({ movies, loading, reload, notify }) {
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [draft, setDraft] = useState([]);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [sort, setSort] = useState('year');
+  const [dialog, setDialog] = useState(null); // null | { movie: object | null }
 
-  const titleOf = (id) => movies.find((movie) => movie.id === id)?.title ?? `#${id}`;
+  const stats = useMemo(() => {
+    const byId = new Map(movies.map((movie) => [movie.id, movie]));
+    const unwatched = movies.filter((movie) => !movie.watched);
+    // "Next up" = the first unwatched movie whose prerequisites are all watched.
+    const next = [...unwatched]
+      .sort(SORTS.year)
+      .find((movie) => movie.prerequisites.every((id) => byId.get(id)?.watched));
+    return {
+      total: movies.length,
+      watched: movies.length - unwatched.length,
+      minutesLeft: unwatched.reduce((sum, movie) => sum + movie.runtime, 0),
+      next,
+    };
+  }, [movies]);
 
-  async function addMovie(event) {
-    event.preventDefault();
-    setSaving(true);
-    try {
-      await api.createMovie({
-        title: form.title,
-        releaseYear: Number(form.releaseYear),
-        runtime: Number(form.runtime),
-        prerequisites: form.prerequisites,
-      });
-      setForm(EMPTY_FORM);
-      await reload();
-      notify('Movie added', 'success');
-    } catch (error) {
-      notify(describeError(error), 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
+  const visible = useMemo(() => {
+    const text = query.trim().toLowerCase();
+    return movies
+      .filter((movie) => (filter === 'all' ? true : filter === 'watched' ? movie.watched : !movie.watched))
+      .filter((movie) => !text || movie.title.toLowerCase().includes(text))
+      .sort(SORTS[sort]);
+  }, [movies, query, filter, sort]);
 
   async function toggleWatched(movie) {
     try {
@@ -41,101 +53,96 @@ export default function Movies({ movies, loading, reload, notify }) {
     }
   }
 
-  async function savePrerequisites(movie) {
-    try {
-      await api.updateMovie(movie.id, { prerequisites: draft });
-      setEditingId(null);
-      await reload();
-      notify('Prerequisites saved', 'success');
-    } catch (error) {
-      notify(describeError(error), 'error');
-    }
-  }
-
-  async function remove(movie) {
-    if (!window.confirm(`Delete "${movie.title}"? It will also be removed from other movies' prerequisites.`)) return;
-    try {
-      await api.deleteMovie(movie.id);
-      await reload();
-      notify('Movie deleted', 'success');
-    } catch (error) {
-      notify(describeError(error), 'error');
-    }
-  }
-
-  const watchedCount = movies.filter((movie) => movie.watched).length;
+  const percent = stats.total ? Math.round((stats.watched / stats.total) * 100) : 0;
 
   return (
     <div className="stack">
-      <section className="panel">
-        <h2>Add a movie</h2>
-        <form className="form" onSubmit={addMovie}>
-          <label className="field wide">
-            Title
-            <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Doctor Strange" />
-          </label>
-          <label className="field">
-            Release year
-            <input required type="number" min="1888" max="2100" value={form.releaseYear} onChange={(e) => setForm({ ...form, releaseYear: e.target.value })} />
-          </label>
-          <label className="field">
-            Runtime (minutes)
-            <input required type="number" min="1" max="300" value={form.runtime} onChange={(e) => setForm({ ...form, runtime: e.target.value })} />
-          </label>
-          <div className="field wide">
-            Watch these first (optional)
-            <PrerequisitePicker movies={movies} selected={form.prerequisites} onChange={(prerequisites) => setForm({ ...form, prerequisites })} />
-          </div>
-          <button className="btn primary" disabled={saving}>{saving ? 'Adding…' : 'Add movie'}</button>
-        </form>
+      <section className="stats">
+        <article className="stat">
+          <span className="stat-label">Library</span>
+          <strong>{stats.total}</strong>
+          <small>movies tracked</small>
+        </article>
+        <article className="stat">
+          <span className="stat-label">Watched</span>
+          <strong>{stats.watched}<em>/{stats.total}</em></strong>
+          <div className="mini-bar"><i style={{ width: `${percent}%` }} /></div>
+        </article>
+        <article className="stat">
+          <span className="stat-label">Time left</span>
+          <strong>{formatDuration(stats.minutesLeft)}</strong>
+          <small>of unwatched movies</small>
+        </article>
+        <article className="stat accent">
+          <span className="stat-label">Next up</span>
+          <strong className="stat-title">{stats.next ? stats.next.title : 'All caught up'}</strong>
+          <small>{stats.next ? 'Ready to watch now' : 'Nothing left to watch'}</small>
+        </article>
       </section>
 
-      <section>
-        <div className="section-head">
-          <h2>Your library</h2>
-          <span className="muted">{watchedCount} of {movies.length} watched</span>
+      <section className="toolbar">
+        <input
+          className="search"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search movies…"
+          aria-label="Search movies"
+        />
+        <div className="segmented" role="group" aria-label="Filter">
+          {FILTERS.map(({ id, label }) => (
+            <button key={id} aria-pressed={filter === id} onClick={() => setFilter(id)}>{label}</button>
+          ))}
         </div>
+        <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort movies">
+          <option value="year">Release year</option>
+          <option value="title">Title</option>
+          <option value="runtime">Longest first</option>
+        </select>
+        <button className="btn primary" onClick={() => setDialog({ movie: null })}>+ Add movie</button>
+      </section>
 
-        {loading && <p className="muted">Loading movies…</p>}
-        {!loading && movies.length === 0 && <p className="empty">No movies yet. Add the first one above.</p>}
+      {loading && <p className="muted">Loading movies…</p>}
+      {!loading && movies.length === 0 && <p className="empty">No movies yet. Add the first one.</p>}
+      {!loading && movies.length > 0 && visible.length === 0 && <p className="empty">No movies match your search.</p>}
 
-        <ul className="list">
-          {movies.map((movie) => (
-            <li key={movie.id} className={`movie ${movie.watched ? 'is-watched' : ''}`}>
-              <label className="tick">
+      <ul className="grid">
+        {visible.map((movie, index) => (
+          <li key={movie.id} className="card" style={{ animationDelay: `${Math.min(index, 12) * 40}ms` }}>
+            <Poster movie={movie} badge={movie.watched ? '✓ Watched' : null} onClick={() => setDialog({ movie })} />
+            <div className="card-foot">
+              <div className="row" style={{ gap: '0.4rem', alignItems: 'center' }}>
+                <span className="muted">{formatDuration(movie.runtime)}</span>
+                <a
+                  href={`https://www.youtube.com/results?search_query=${encodeURIComponent(movie.title + ' Marvel official trailer')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="trailer-link"
+                  title={`Watch ${movie.title} trailer`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  ▶
+                </a>
+              </div>
+              <label className="tick" title={movie.watched ? 'Mark as not watched' : 'Mark as watched'}>
                 <input type="checkbox" checked={movie.watched} onChange={() => toggleWatched(movie)} />
                 <span className="tick-box" aria-hidden="true" />
                 <span className="sr-only">Mark {movie.title} as watched</span>
               </label>
+            </div>
+          </li>
+        ))}
+      </ul>
 
-              <div className="movie-main">
-                <h3>{movie.title}</h3>
-                <p className="muted">{movie.releaseYear}, {formatDuration(movie.runtime)}</p>
-                {movie.prerequisites.length > 0 && (
-                  <p className="needs">Needs: {movie.prerequisites.map(titleOf).join(', ')}</p>
-                )}
-
-                {editingId === movie.id && (
-                  <div className="editor">
-                    <PrerequisitePicker movies={movies} excludeId={movie.id} selected={draft} onChange={setDraft} />
-                    <div className="row">
-                      <button className="btn primary small" onClick={() => savePrerequisites(movie)}>Save prerequisites</button>
-                      <button className="btn ghost small" onClick={() => setEditingId(null)}>Cancel</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="row actions">
-                <button className="btn ghost small" onClick={() => { setEditingId(movie.id); setDraft(movie.prerequisites); }}>
-                  Edit prerequisites
-                </button>
-                <button className="btn danger small" onClick={() => remove(movie)}>Delete</button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {dialog && (
+        <MovieDialog
+          movie={dialog.movie}
+          movies={movies}
+          onClose={() => setDialog(null)}
+          onChanged={reload}
+          notify={notify}
+        />
+      )}
     </div>
   );
 }

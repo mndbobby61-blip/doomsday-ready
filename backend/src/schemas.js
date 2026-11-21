@@ -6,6 +6,13 @@ const releaseYear = z.number().int().min(1888).max(2100);
 const runtime = z.number().int().min(1, 'Runtime must be 1-300 minutes').max(300, 'Runtime must be 1-300 minutes');
 const prerequisites = z.array(z.number().int().positive());
 const watched = z.boolean();
+// Optional poster link. An empty string means "no poster".
+const posterUrl = z
+  .string()
+  .trim()
+  .max(500)
+  .refine((value) => value === '' || /^https?:\/\//i.test(value), 'Poster must be an http(s) link')
+  .nullable();
 
 export const movieCreateSchema = z.object({
   title,
@@ -13,8 +20,10 @@ export const movieCreateSchema = z.object({
   runtime,
   prerequisites: prerequisites.optional().default([]),
   watched: watched.optional().default(false),
+  posterUrl: posterUrl.optional(),
 });
 
+// PATCH: every field optional, but at least one must be present.
 export const movieUpdateSchema = z
   .object({
     title: title.optional(),
@@ -22,6 +31,7 @@ export const movieUpdateSchema = z
     runtime: runtime.optional(),
     prerequisites: prerequisites.optional(),
     watched: watched.optional(),
+    posterUrl: posterUrl.optional(),
   })
   .refine((body) => Object.values(body).some((value) => value !== undefined), {
     message: 'Send at least one field to update',
@@ -42,6 +52,7 @@ export const groupSizeSchema = z.coerce
   .min(1, 'Group size must be between 1 and 10,000')
   .max(10000, 'Group size must be between 1 and 10,000');
 
+/** Validate `data` with `schema` or throw a 400 with per-field details. */
 export function parse(schema, data) {
   const result = schema.safeParse(data);
   if (result.success) return result.data;

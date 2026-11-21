@@ -1,4 +1,3 @@
-
 export class AppError extends Error {
   constructor(status, code, message, details) {
     super(message);
@@ -9,6 +8,7 @@ export class AppError extends Error {
 }
 
 export const badRequest = (message, details) => new AppError(400, 'VALIDATION_ERROR', message, details);
+export const unauthorized = (message = 'Please sign in to continue') => new AppError(401, 'UNAUTHORIZED', message);
 export const notFound = (what) => new AppError(404, 'NOT_FOUND', `${what} not found`);
 export const conflict = (code, message) => new AppError(409, code, message);
 
@@ -16,6 +16,7 @@ export function notFoundHandler(req, res) {
   res.status(404).json({ error: 'NOT_FOUND', message: `Route ${req.method} ${req.path} not found` });
 }
 
+// eslint-disable-next-line no-unused-vars
 export function errorHandler(err, req, res, _next) {
   if (err instanceof AppError) {
     return res.status(err.status).json({

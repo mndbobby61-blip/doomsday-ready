@@ -10,8 +10,12 @@ export function moviesRouter(db) {
     all: db.prepare('SELECT * FROM movies ORDER BY release_year, id'),
     byId: db.prepare('SELECT * FROM movies WHERE id = ?'),
     byTitle: db.prepare('SELECT id FROM movies WHERE title = ?'),
-    insert: db.prepare('INSERT INTO movies (title, release_year, runtime, watched) VALUES (?, ?, ?, ?)'),
-    update: db.prepare('UPDATE movies SET title = ?, release_year = ?, runtime = ?, watched = ? WHERE id = ?'),
+    insert: db.prepare(
+      'INSERT INTO movies (title, release_year, runtime, watched, poster_url) VALUES (?, ?, ?, ?, ?)',
+    ),
+    update: db.prepare(
+      'UPDATE movies SET title = ?, release_year = ?, runtime = ?, watched = ?, poster_url = ? WHERE id = ?',
+    ),
     remove: db.prepare('DELETE FROM movies WHERE id = ?'),
     prereqsOf: db.prepare('SELECT prerequisite_id FROM movie_prerequisites WHERE movie_id = ? ORDER BY prerequisite_id'),
     allEdges: db.prepare('SELECT movie_id, prerequisite_id FROM movie_prerequisites ORDER BY prerequisite_id'),
@@ -25,12 +29,13 @@ export function moviesRouter(db) {
     releaseYear: row.release_year,
     runtime: row.runtime,
     watched: row.watched === 1,
+    posterUrl: row.poster_url ?? null,
     prerequisites,
   });
 
   const getMovie = (id) => serialize(sql.byId.get(id), sql.prereqsOf.all(id).map((r) => r.prerequisite_id));
 
-  // পুরো prerequisite graph: Map<movieId, prerequisiteIds[]>
+  /** Whole prerequisite graph as Map<movieId, prerequisiteIds[]>. */
   const loadGraph = () => {
     const graph = new Map();
     for (const { movie_id, prerequisite_id } of sql.allEdges.all()) {
@@ -64,10 +69,17 @@ export function moviesRouter(db) {
     }
     const prerequisites = uniqueIds(data.prerequisites);
     assertPrerequisitesExist(prerequisites);
-    // নতুন মুভির ক্ষেত্রে cycle check লাগে না: এখনো কেউ এর ওপর নির্ভর করে না।
+    // No cycle check needed here: a brand-new movie cannot be anyone's
+    // prerequisite yet, so nothing can lead back to it.
 
     const id = db.transaction(() => {
-      const { lastInsertRowid } = sql.insert.run(data.title, data.releaseYear, data.runtime, data.watched ? 1 : 0);
+      const { lastInsertRowid } = sql.insert.run(
+        data.title,
+        data.releaseYear,
+        data.runtime,
+        data.watched ? 1 : 0,
+        data.posterUrl || null,
+      );
       replacePrerequisites(Number(lastInsertRowid), prerequisites);
       return Number(lastInsertRowid);
     })();
@@ -102,6 +114,7 @@ export function moviesRouter(db) {
         patch.releaseYear ?? current.release_year,
         patch.runtime ?? current.runtime,
         patch.watched === undefined ? current.watched : Number(patch.watched),
+        patch.posterUrl === undefined ? current.poster_url : patch.posterUrl || null,
         id,
       );
       if (prerequisites) replacePrerequisites(id, prerequisites);
@@ -113,7 +126,7 @@ export function moviesRouter(db) {
   router.delete('/:id', (req, res) => {
     const id = parseId(req.params.id);
     if (!sql.byId.get(id)) throw notFound('Movie');
-    sql.remove.run(id); // তীরগুলো ON DELETE CASCADE-এ আপনি মুছে যায়
+    sql.remove.run(id); // links are removed by ON DELETE CASCADE
     res.status(204).end();
   });
 

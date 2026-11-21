@@ -1,9 +1,10 @@
-﻿# Doomsday Ready
+# Doomsday Ready
 
 Plan your MCU rewatch before *Avengers: Doomsday*, then book the whole crew into an opening-night watch party.
 
 - **Rewatch order:** pick a target movie and get every movie you need first, in a valid order, with progress and remaining watch time.
 - **Booking quote:** pick a cinema and a group size and get the fewest seat bundles that add up to exactly that many seats, or "not possible".
+- **Modern Experience:** live interactive auditorium seating layout, DAG prerequisite flow graph, Avengers: Doomsday premiere countdown, and official trailer links.
 - **Stack:** Node.js, Express 5, SQLite (better-sqlite3), Zod, React 19 (Vite), Vitest, Docker Compose.
 
 ## Run it
